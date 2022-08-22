@@ -3,6 +3,9 @@ const bucket = new WeakMap()
 
 // 存储当前需要注册的副作用函数
 let activeEffect
+// 副作用函数栈，当副作用函数执行时入栈，执行完毕后出栈
+// 避免因副作用函数嵌套导致的内层副作用函数被外层属性错误收集的问题
+const effectStack = []
 
 /**
  * 注册副作用函数
@@ -17,7 +20,13 @@ function effect(fn) {
     cleanup(effectFn)
     // 当effectFn执行时，将其设置为当前的activeEffect
     activeEffect = effectFn
+    // 副作用函数执行前入栈
+    effectStack.push(effectFn)
     fn()
+    // 副作用函数执行后出栈
+    effectStack.pop()
+    // activeEffect 指向更新
+    activeEffect = effectStack[effectStack.length - 1]
   }
   // effectFn.deps 存储所有与该副作用函数关联的依赖集合
   effectFn.deps = []
@@ -89,7 +98,14 @@ function trigger(target, key) {
   }
   // 基于 deps 创建新的用于遍历执行的副作用函数集合
   // 解决因 cleanup 导致的 Set 实例不断删除&新增从而进一步导致的遍历诗无限循环的问题
-  const effectsToRun = new Set(deps)
+  const effectsToRun = new Set()
+  // 在执行副作用函数时，要保证其不是当前正在进行依赖收集的 activeEffect
+  // 以防止出现 effectFn 的循环递归调用
+  deps && deps.forEach(effectFn => {
+    if (effectFn !== activeEffect) {
+      effectsToRun.add(effectFn)
+    }
+  })
   // 遍历执行集合中的副作用函数
   effectsToRun.forEach(effectFn => effectFn())
 }
